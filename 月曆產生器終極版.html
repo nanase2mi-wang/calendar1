@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>A4 台灣客製化月曆生成器 (Chrome Extension Ready)</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Custom Font Inter & Noto Sans TC -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap">
+  <style>
+    body {
+      font-family: 'Noto Sans TC', sans-serif;
+      background-color: #f3f4f6;
+    }
+
+    /* A4 Dimensions styling for live editor */
+    .a4-preview-portrait {
+      width: 210mm;
+      height: 297mm;
+      min-width: 210mm;
+      min-height: 297mm;
+      background: white;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+      margin: 0 auto;
+      box-sizing: border-box;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .a4-preview-landscape {
+      width: 297mm;
+      height: 210mm;
+      min-width: 297mm;
+      min-height: 210mm;
+      background: white;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+      margin: 0 auto;
+      box-sizing: border-box;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Print styles specifically targeting A4 */
+    @media print {
+      @page {
+        size: A4 portrait;
+        margin: 0;
+      }
+      body {
+        background: white !important;
+        padding: 0 !important;
+        margin: 0 !important;
+      }
+      .no-print {
+        display: none !important;
+      }
+      .a4-preview-portrait, .a4-preview-landscape {
+        box-shadow: none !important;
+        margin: 0 !important;
+        width: 100vw !important;
+        height: 100vh !important;
+        page-break-after: always;
+      }
+      .print-landscape-page {
+        @page { size: A4 landscape; margin: 0; }
+      }
+    }
+
+    /* Custom Hide Grid Styles */
+    .calendar-table td, .calendar-table th {
+      border: none !important;
+    }
+  </style>
+</head>
+<body class="text-gray-800 antialiased min-h-screen flex flex-col">
+
+  <!-- Header / Navigation Bar (No Print) -->
+  <header class="no-print bg-slate-900 text-white shadow-md sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center space-x-3">
+        <div class="bg-indigo-600 p-2 rounded-lg">
+          <i data-lucide="calendar" class="w-6 h-6"></i>
+        </div>
+        <div>
+          <h1 class="font-bold text-lg leading-tight">A4 單張月曆生成器</h1>
+          <p class="text-xs text-slate-400">Chrome OS Flex 擴充元件 / 網頁版</p>
+        </div>
+      </div>
+
+      <div class="flex items-center space-x-3">
+        <button id="btn-show-manifest" class="px-3 py-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg flex items-center space-x-1.5 transition">
+          <i data-lucide="code" class="w-4 h-4"></i>
+          <span>擴充元件原始碼</span>
+        </button>
+        <button id="btn-export-html" class="px-3 py-1.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg flex items-center space-x-1.5 transition shadow">
+          <i data-lucide="file-code" class="w-4 h-4"></i>
+          <span>匯出 HTML</span>
+        </button>
+        <button id="btn-export-word" class="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center space-x-1.5 transition shadow">
+          <i data-lucide="file-text" class="w-4 h-4"></i>
+          <span>匯出 Word (.doc)</span>
+        </button>
+        <button id="btn-print" class="px-3 py-1.5 text-xs bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg flex items-center space-x-1.5 transition shadow">
+          <i data-lucide="printer" class="w-4 h-4"></i>
+          <span>直接列印 / PDF</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Layout -->
+  <div class="flex-1 flex flex-col lg:flex-row max-w-[1600px] w-full mx-auto p-4 gap-6">
+
+    <!-- Left Controls Sidebar (No Print) -->
+    <aside class="no-print w-full lg:w-80 bg-white p-5 rounded-2xl shadow-sm border border-gray-200 space-y-6 flex-shrink-0">
+      <div>
+        <h2 class="text-base font-bold text-gray-900 border-b pb-2 mb-4 flex items-center gap-2">
+          <i data-lucide="sliders" class="w-5 h-5 text-indigo-600"></i> 月曆參數設定
+        </h2>
+
+        <!-- Year & Month Inputs -->
+        <div class="space-y-4">
+          <div>
+            <label class="block text-xs font-semibold text-gray-600 mb-1">選擇年份 (西元)</label>
+            <input type="number" id="input-year" min="1900" max="2100" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none text-sm font-medium" value="2026">
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-gray-600 mb-1">選擇月份</label>
+            <select id="input-month" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none text-sm font-medium">
+              <option value="1">1 月</option>
+              <option value="2">2 月</option>
+              <option value="3">3 月</option>
+              <option value="4">4 月</option>
+              <option value="5">5 月</option>
+              <option value="6">6 月</option>
+              <option value="7">7 月</option>
+              <option value="8">8 月</option>
+              <option value="9">9 月</option>
+              <option value="10" selected>10 月</option>
+              <option value="11">11 月</option>
+              <option value="12">12 月</option>
+            </select>
+          </div>
+
+          <!-- Page Orientation -->
+          <div>
+            <label class="block text-xs font-semibold text-gray-600 mb-2">A4 版面方向</label>
+            <div class="grid grid-cols-2 gap-2">
+              <button type="button" id="btn-portrait" class="px-3 py-2 border text-xs font-semibold rounded-lg bg-indigo-50 border-indigo-600 text-indigo-700 flex items-center justify-center gap-1.5 transition">
+                <i data-lucide="file" class="w-4 h-4"></i> 直式 (Portrait)
+              </button>
+              <button type="button" id="btn-landscape" class="px-3 py-2 border text-xs font-semibold rounded-lg bg-white border-gray-300 text-gray-600 hover:bg-gray-50 flex items-center justify-center gap-1.5 transition">
+                <i data-lucide="file-text" class="w-4 h-4 rotate-90"></i> 橫式 (Landscape)
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Image Upload Section -->
+      <div>
+        <h2 class="text-base font-bold text-gray-900 border-b pb-2 mb-4 flex items-center gap-2">
+          <i data-lucide="image" class="w-5 h-5 text-indigo-600"></i> 照片設定 (佔 1/3)
+        </h2>
+        <div class="space-y-3">
+          <div id="drop-zone" class="border-2 border-dashed border-gray-300 hover:border-indigo-500 rounded-xl p-4 text-center cursor-pointer transition bg-gray-50 hover:bg-indigo-50/30">
+            <i data-lucide="upload-cloud" class="w-8 h-8 mx-auto text-gray-400 mb-1"></i>
+            <p class="text-xs font-medium text-gray-600">點擊上傳或拖曳圖片至此</p>
+            <p class="text-[10px] text-gray-400 mt-1">支援 JPG, PNG, WEBP</p>
+            <input type="file" id="image-input" accept="image/*" class="hidden">
+          </div>
+          <button id="btn-remove-image" class="w-full py-1.5 text-xs text-red-600 hover:text-red-700 font-medium hidden flex items-center justify-center gap-1">
+            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> 移除圖片
+          </button>
+        </div>
+      </div>
+
+      <!-- Quick Tips -->
+      <div class="bg-indigo-50 rounded-xl p-3.5 text-xs text-indigo-900 border border-indigo-100 space-y-1.5">
+        <p class="font-bold flex items-center gap-1">
+          <i data-lucide="info" class="w-4 h-4 text-indigo-600"></i> 設計特色提示：
+        </p>
+        <ul class="list-disc list-inside text-indigo-800 space-y-1 text-[11px] leading-relaxed">
+          <li>無網格線極簡視覺設計</li>
+          <li>月曆佔 2/3 空間，相片佔 1/3 空間</li>
+          <li>週日為每星期第一天（紅色標示）</li>
+          <li>週六綠色標示，週一至週五黑色</li>
+          <li>自動換算中華民國年份與國定假日</li>
+        </ul>
+      </div>
+    </aside>
+
+    <!-- Right Workspace Area (A4 Canvas Container) -->
+    <main class="flex-1 flex justify-center items-start overflow-auto p-2 bg-gray-200/60 rounded-2xl border border-gray-300/50 min-h-[600px]">
+      
+      <!-- A4 Page Component -->
+      <div id="a4-page" class="a4-preview-portrait p-8 flex flex-col justify-between transition-all duration-300">
+        
+        <!-- Calendar Section (Top 2/3) -->
+        <div id="calendar-container" class="h-[64%] flex flex-col justify-start">
+          
+          <!-- Calendar Title Header -->
+          <div class="flex justify-between items-end border-b-2 border-gray-900 pb-3 mb-4">
+            <div>
+              <div class="flex items-baseline space-x-3">
+                <span id="calendar-year-display" class="text-4xl font-extrabold tracking-tight text-gray-900">2026</span>
+                <span id="calendar-roc-year" class="text-sm font-medium text-gray-600">(中華民國 115 年)</span>
+              </div>
+              <p class="text-xs text-gray-400 font-medium tracking-wider uppercase mt-0.5">Taiwan Calendar</p>
+            </div>
+            <div id="calendar-month-display" class="text-6xl font-black text-gray-900 tracking-tight leading-none">
+              10
+            </div>
+          </div>
+
+          <!-- Calendar Grid Table (Hidden Grid Lines) -->
+          <div class="flex-1 flex flex-col">
+            <table class="w-full h-full calendar-table table-fixed border-collapse">
+              <thead>
+                <tr class="text-center text-sm font-bold border-b border-gray-200">
+                  <th class="py-2 text-red-600">週日</th>
+                  <th class="py-2 text-gray-800">週一</th>
+                  <th class="py-2 text-gray-800">週二</th>
+                  <th class="py-2 text-gray-800">週三</th>
+                  <th class="py-2 text-gray-800">週四</th>
+                  <th class="py-2 text-gray-800">週五</th>
+                  <th class="py-2 text-emerald-600">週六</th>
+                </tr>
+              </thead>
+              <tbody id="calendar-body" class="divide-y-0">
+                <!-- Dynamic Dates Will Be Injected Here -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Photo Section (Bottom 1/3) -->
+        <div id="photo-container" class="h-[32%] w-full rounded-xl overflow-hidden bg-gray-100 flex items-center justify-center border border-dashed border-gray-300 relative group">
+          <img id="calendar-photo" src="" alt="Uploaded Photo" class="w-full h-full object-cover hidden">
+          <div id="photo-placeholder" class="text-center text-gray-400 p-4">
+            <i data-lucide="image" class="w-10 h-10 mx-auto mb-2 text-gray-300"></i>
+            <p class="text-xs font-medium">點擊左側面板上傳相片 (佔整體 1/3 空間)</p>
+          </div>
+        </div>
+
+      </div>
+
+    </main>
+  </div>
+
+  <!-- Manifest Modal for Chrome Extension Setup -->
+  <div id="manifest-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-gray-100 max-h-[90vh] flex flex-col">
+      <div class="flex justify-between items-center pb-3 border-b mb-4">
+        <h3 class="font-bold text-gray-900 text-lg flex items-center gap-2">
+          <i data-lucide="package" class="w-5 h-5 text-indigo-600"></i> Chrome OS Flex 擴充元件安裝說明
+        </h3>
+        <button id="btn-close-modal" class="text-gray-400 hover:text-gray-600">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+      <div class="space-y-4 text-xs text-gray-600 overflow-y-auto pr-1">
+        <p>若要在 Chrome OS Flex / Chrome 瀏覽器中將此工具包裝為原生擴充元件，請在資料夾中建立以下檔案：</p>
+        
+        <div>
+          <span class="font-bold text-gray-800 block mb-1">1. manifest.json</span>
+          <pre class="bg-slate-900 text-slate-200 p-3 rounded-lg overflow-x-auto text-[11px] font-mono">
+{
+  "manifest_version": 3,
+  "name": "A4 台灣客製化月曆生成器",
+  "version": "1.0",
+  "description": "自動產生 A4 橫式/直式單張台灣節日月曆",
+  "action": {
+    "default_popup": "index.html",
+    "default_icon": "icon.png"
+  },
+  "permissions": []
+}</pre>
+        </div>
+
+        <div>
+          <span class="font-bold text-gray-800 block mb-1">2. 安裝步驟</span>
+          <ol class="list-decimal list-inside space-y-1 text-gray-700">
+            <li>將本檔儲存為 <code class="bg-gray-100 px-1 rounded border">index.html</code> 與上述 <code class="bg-gray-100 px-1 rounded border">manifest.json</code> 放於同資料夾。</li>
+            <li>開啟 Chrome 瀏覽器，網址列輸入 <code class="bg-gray-100 px-1 rounded border">chrome://extensions</code>。</li>
+            <li>開啟右上角「開發者模式」。</li>
+            <li>點擊「載入未封裝項目」，選擇該資料夾即可安裝完成！</li>
+          </ol>
+        </div>
+      </div>
+      <div class="pt-4 border-t mt-4 flex justify-end">
+        <button id="btn-modal-ok" class="px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium text-xs hover:bg-indigo-700">關閉窗口</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Initialize Lucide Icons
+    lucide.createIcons();
+
+    // Taiwan Holidays Database (Fixed & Calculation Rules)
+    const TAIWAN_HOLIDAYS = {
+      "1-1": "開國紀念日",
+      "2-28": "和平紀念日",
+      "3-8": "婦女節",
+      "3-12": "植樹節",
+      "4-4": "兒童節",
+      "4-5": "清明節",
+      "5-1": "勞動節",
+      "9-3": "軍人節",
+      "9-28": "教師節",
+      "10-10": "國慶日",
+      "10-25": "臺灣光復節",
+      "11-12": "國父誕辰",
+      "12-25": "行憲紀念日"
+    };
+
+    // Approximate Lunar Holidays for demo/common lookup (2025-2027)
+    const LUNAR_HOLIDAYS = {
+      "2026-1-17": "臘八節",
+      "2026-2-16": "除夕",
+      "2026-2-17": "春節",
+      "2026-2-18": "初二",
+      "2026-2-19": "初三",
+      "2026-3-3": "元宵節",
+      "2026-6-19": "端午節",
+      "2026-9-25": "中秋節",
+      "2025-1-28": "除夕",
+      "2025-1-29": "春節",
+      "2025-5-31": "端午節",
+      "2025-10-6": "中秋節"
+    };
+
+    // Solar Terms (節氣 approximations)
+    const SOLAR_TERMS = {
+      "1-5": "小寒", "1-20": "大寒",
+      "2-4": "立春", "2-19": "雨水",
+      "3-5": "驚蟄", "3-20": "春分",
+      "4-4": "清明", "4-19": "穀雨",
+      "5-5": "立夏", "5-20": "小滿",
+      "6-5": "芒種", "6-21": "夏至",
+      "7-7": "小暑", "7-22": "大暑",
+      "8-7": "立秋", "8-22": "處暑",
+      "9-7": "白露", "9-22": "秋分",
+      "10-8": "寒露", "10-23": "霜降",
+      "11-7": "立冬", "11-22": "小雪",
+      "12-7": "大雪", "12-21": "冬至"
+    };
+
+    // DOM Elements
+    const yearInput = document.getElementById('input-year');
+    const monthInput = document.getElementById('input-month');
+    const portraitBtn = document.getElementById('btn-portrait');
+    const landscapeBtn = document.getElementById('btn-landscape');
+    const a4Page = document.getElementById('a4-page');
+    const calendarYearDisplay = document.getElementById('calendar-year-display');
+    const calendarRocYear = document.getElementById('calendar-roc-year');
+    const calendarMonthDisplay = document.getElementById('calendar-month-display');
+    const calendarBody = document.getElementById('calendar-body');
+    const imageInput = document.getElementById('image-input');
+    const dropZone = document.getElementById('drop-zone');
+    const calendarPhoto = document.getElementById('calendar-photo');
+    const photoPlaceholder = document.getElementById('photo-placeholder');
+    const removeImageBtn = document.getElementById('btn-remove-image');
+
+    let isLandscape = false;
+    let uploadedImageBase64 = '';
+
+    // Render Calendar Function
+    function renderCalendar() {
+      const year = parseInt(yearInput.value) || 2026;
+      const month = parseInt(monthInput.value) || 10;
+
+      // Update Header Titles
+      calendarYearDisplay.textContent = year;
+      const rocYear = year - 1911;
+      calendarRocYear.textContent = rocYear > 0 ? `(中華民國 ${rocYear} 年)` : `(西元前 ${Math.abs(rocYear)+1} 年)`;
+      calendarMonthDisplay.textContent = month < 10 ? `0${month}` : month;
+
+      // Calculate days in month
+      const firstDayIndex = new Date(year, month - 1, 1).getDay(); // 0 is Sunday
+      const totalDays = new Date(year, month, 0).getDate();
+
+      calendarBody.innerHTML = '';
+
+      let dateCounter = 1;
+      const totalRows = Math.ceil((firstDayIndex + totalDays) / 7);
+
+      for (let r = 0; r < totalRows; r++) {
+        const tr = document.createElement('tr');
+        tr.className = "text-center align-top";
+
+        for (let d = 0; d < 7; d++) {
+          const td = document.createElement('td');
+          td.className = "p-1.5 h-16 sm:h-20 border-none transition-all";
+
+          if ((r === 0 && d < firstDayIndex) || dateCounter > totalDays) {
+            // Empty cell
+            td.innerHTML = `<div class="w-full h-full"></div>`;
+          } else {
+            const currentDateNum = dateCounter;
+            const dateKey = `${month}-${currentDateNum}`;
+            const fullDateKey = `${year}-${month}-${currentDateNum}`;
+
+            // Check Holiday / Solar Term
+            let holidayText = TAIWAN_HOLIDAYS[dateKey] || LUNAR_HOLIDAYS[fullDateKey] || SOLAR_TERMS[dateKey] || '';
+
+            // Color Rules
+            // Sunday (d=0) -> Red
+            // Saturday (d=6) -> Green
+            // Weekdays (d=1~5) -> Black/Dark Gray
+            let colorClass = "text-gray-900";
+            if (d === 0) colorClass = "text-red-600";
+            if (d === 6) colorClass = "text-emerald-600";
+
+            td.innerHTML = `
+              <div class="flex flex-col items-center justify-start h-full py-1 rounded-lg hover:bg-gray-50 transition">
+                <span class="text-xl sm:text-2xl font-bold ${colorClass} leading-none mb-1">
+                  ${currentDateNum}
+                </span>
+                ${holidayText ? `<span class="text-[10px] sm:text-[11px] font-medium text-rose-600 truncate max-w-full px-1">${holidayText}</span>` : ''}
+              </div>
+            `;
+            dateCounter++;
+          }
+          tr.appendChild(td);
+        }
+        calendarBody.appendChild(tr);
+      }
+    }
+
+    // Toggle Orientation
+    portraitBtn.addEventListener('click', () => {
+      isLandscape = false;
+      portraitBtn.className = "px-3 py-2 border text-xs font-semibold rounded-lg bg-indigo-50 border-indigo-600 text-indigo-700 flex items-center justify-center gap-1.5 transition";
+      landscapeBtn.className = "px-3 py-2 border text-xs font-semibold rounded-lg bg-white border-gray-300 text-gray-600 hover:bg-gray-50 flex items-center justify-center gap-1.5 transition";
+      
+      a4Page.className = "a4-preview-portrait p-8 flex flex-col justify-between transition-all duration-300";
+      document.body.classList.remove('print-landscape-page');
+    });
+
+    landscapeBtn.addEventListener('click', () => {
+      isLandscape = true;
+      landscapeBtn.className = "px-3 py-2 border text-xs font-semibold rounded-lg bg-indigo-50 border-indigo-600 text-indigo-700 flex items-center justify-center gap-1.5 transition";
+      portraitBtn.className = "px-3 py-2 border text-xs font-semibold rounded-lg bg-white border-gray-300 text-gray-600 hover:bg-gray-50 flex items-center justify-center gap-1.5 transition";
+      
+      a4Page.className = "a4-preview-landscape p-8 flex flex-col justify-between transition-all duration-300";
+      document.body.classList.add('print-landscape-page');
+    });
+
+    // Event Listeners for Date Inputs
+    yearInput.addEventListener('input', renderCalendar);
+    monthInput.addEventListener('change', renderCalendar);
+
+    // Image Upload Handling
+    dropZone.addEventListener('click', () => imageInput.click());
+
+    imageInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) handleImageFile(file);
+    });
+
+    dropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropZone.classList.add('border-indigo-500', 'bg-indigo-50/50');
+    });
+
+    dropZone.addEventListener('dragleave', () => {
+      dropZone.classList.remove('border-indigo-500', 'bg-indigo-50/50');
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('border-indigo-500', 'bg-indigo-50/50');
+      const file = e.dataTransfer.files[0];
+      if (file) handleImageFile(file);
+    });
+
+    function handleImageFile(file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        uploadedImageBase64 = event.target.result;
+        calendarPhoto.src = uploadedImageBase64;
+        calendarPhoto.classList.remove('hidden');
+        photoPlaceholder.classList.add('hidden');
+        removeImageBtn.classList.remove('hidden');
+      };
+      reader.readAsDataURL(file);
+    }
+
+    removeImageBtn.addEventListener('click', () => {
+      uploadedImageBase64 = '';
+      calendarPhoto.src = '';
+      calendarPhoto.classList.add('hidden');
+      photoPlaceholder.classList.remove('hidden');
+      removeImageBtn.classList.add('hidden');
+      imageInput.value = '';
+    });
+
+    // Print Handling
+    document.getElementById('btn-print').addEventListener('click', () => {
+      window.print();
+    });
+
+    // Export HTML File
+    document.getElementById('btn-export-html').addEventListener('click', () => {
+      const htmlContent = `
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <title>${yearInput.value}年${monthInput.value}月曆</title>
+  <script src="https://cdn.tailwindcss.com"><\/script>
+  <style>
+    @page { size: A4 ${isLandscape ? 'landscape' : 'portrait'}; margin: 0; }
+    body { font-family: sans-serif; background: white; margin: 0; padding: 0; }
+  </style>
+</head>
+<body class="flex justify-center items-center min-h-screen p-0">
+  <div style="width: ${isLandscape ? '297mm' : '210mm'}; height: ${isLandscape ? '210mm' : '297mm'}; padding: 2rem; box-sizing: border-box; display: flex; flex-direction: column; justify-content: space-between;">
+    ${a4Page.innerHTML}
+  </div>
+</body>
+</html>`;
+
+      const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `台灣月曆_${yearInput.value}_${monthInput.value}月.html`;
+      link.click();
+      URL.revokeObjectURL(url);
+    });
+
+    // Export Word Document (.doc format with inline styles & HTML embedding)
+    document.getElementById('btn-export-word').addEventListener('click', () => {
+      const pageInner = a4Page.cloneNode(true);
+      
+      // Clean interactive elements if any
+      const docHtml = `
+        <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+        <head>
+          <meta charset="utf-8">
+          <title>月曆 Word 檔</title>
+          <!--[if gte mso 9]>
+          <xml>
+            <w:WordDocument>
+              <w:View>Print</w:View>
+              <w:Zoom>100</w:Zoom>
+              <w:DoNotOptimizeForCustomXformatting/>
+            </w:WordDocument>
+          </xml>
+          <![endif]-->
+          <style>
+            @page Section1 {
+              size: ${isLandscape ? '841.8pt 595.3pt' : '595.3pt 841.8pt'};
+              margin: 1.0in;
+            }
+            div.Section1 { page: Section1; }
+            table { width: 100%; border-collapse: collapse; }
+            td, th { padding: 8px; text-align: center; border: none; }
+            .text-red-600 { color: #dc2626; }
+            .text-emerald-600 { color: #059669; }
+            .text-gray-900 { color: #111827; }
+            .text-rose-600 { color: #e11d48; font-size: 9pt; }
+          </style>
+        </head>
+        <body>
+          <div class="Section1">
+            ${pageInner.innerHTML}
+          </div>
+        </body>
+        </html>
+      `;
+
+      const blob = new Blob(['\ufeff', docHtml], { type: 'application/msword' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `月曆_${yearInput.value}_${monthInput.value}月.doc`;
+      link.click();
+      URL.revokeObjectURL(url);
+    });
+
+    // Manifest Modal Handlers
+    const manifestModal = document.getElementById('manifest-modal');
+    document.getElementById('btn-show-manifest').addEventListener('click', () => {
+      manifestModal.classList.remove('hidden');
+    });
+    document.getElementById('btn-close-modal').addEventListener('click', () => {
+      manifestModal.classList.add('hidden');
+    });
+    document.getElementById('btn-modal-ok').addEventListener('click', () => {
+      manifestModal.classList.add('hidden');
+    });
+
+    // Initial render
+    renderCalendar();
+  </script>
+</body>
+</html>
